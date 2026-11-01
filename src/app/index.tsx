@@ -1,98 +1,172 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect, useState } from 'react';
+import {
+  Alert,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
+interface Book {
+  id: string;
+  title: string;
+  author: string;
 }
 
-export default function HomeScreen() {
+export default function BookWishlistScreen() {
+  const [books, setBooks] = useState<Book[]>([]);
+  const [title, setTitle] = useState('');
+  const [author, setAuthor] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editId, setEditId] = useState<string | null>(null);
+
+  // Load data from AsyncStorage on component mount
+  useEffect(() => {
+    loadBooks();
+  }, []);
+
+  const loadBooks = async () => {
+    try {
+      const storedBooks = await AsyncStorage.getItem('@book_wishlist');
+      if (storedBooks) {
+        setBooks(JSON.parse(storedBooks));
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const saveBooks = async (updatedBooks: Book[]) => {
+    try {
+      await AsyncStorage.setItem('@book_wishlist', JSON.stringify(updatedBooks));
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleAddOrUpdate = () => {
+    if (!title.trim() || !author.trim()) {
+      Alert.alert('Error', 'Please enter both book title and author!');
+      return;
+    }
+
+    if (editId) {
+      // Update existing book
+      const updated = books.map((item) =>
+        item.id === editId ? { ...item, title, author } : item
+      );
+      setBooks(updated);
+      saveBooks(updated);
+      setEditId(null);
+    } else {
+      // Add new book
+      const newBook: Book = {
+        id: Date.now().toString(),
+        title,
+        author,
+      };
+      const updated = [newBook, ...books];
+      setBooks(updated);
+      saveBooks(updated);
+    }
+
+    setTitle('');
+    setAuthor('');
+  };
+
+  const handleEdit = (book: Book) => {
+    setTitle(book.title);
+    setAuthor(book.author);
+    setEditId(book.id);
+  };
+
+  const handleDelete = (id: string) => {
+    const updated = books.filter((item) => item.id !== id);
+    setBooks(updated);
+    saveBooks(updated);
+  };
+
+  // Search and filter using filter() array method
+  const filteredBooks = books.filter(
+    (item) =>
+      item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.author.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+    <View style={styles.container}>
+      <Text style={styles.header}>📚 Book Wishlist & Library</Text>
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+      {/* Search Bar */}
+      <TextInput
+        style={styles.input}
+        placeholder="Search by book title or author..."
+        placeholderTextColor="#94a3b8"
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+      />
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
+      {/* Input Fields for Add/Update */}
+      <TextInput
+        style={styles.input}
+        placeholder="Enter book title"
+        placeholderTextColor="#94a3b8"
+        value={title}
+        onChangeText={setTitle}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Enter author name"
+        placeholderTextColor="#94a3b8"
+        value={author}
+        onChangeText={setAuthor}
+      />
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+      <Pressable style={styles.button} onPress={handleAddOrUpdate}>
+        <Text style={styles.buttonText}>
+          {editId ? 'Update Book' : 'Add to Wishlist'}
+        </Text>
+      </Pressable>
+
+      {/* List of Books */}
+      <FlatList
+        data={filteredBooks}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View style={styles.card}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>📖 {item.title}</Text>
+              <Text style={styles.cardAuthor}>By: {item.author}</Text>
+            </View>
+            <View style={styles.actionContainer}>
+              <Pressable onPress={() => handleEdit(item)} style={styles.editBtn}>
+                <Text style={styles.actionText}>Edit</Text>
+              </Pressable>
+              <Pressable onPress={() => handleDelete(item.id)} style={styles.deleteBtn}>
+                <Text style={styles.actionText}>Delete</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-  },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
-  },
+  container: { flex: 1, padding: 20, backgroundColor: '#f8fafc', paddingTop: 50 },
+  header: { fontSize: 22, fontWeight: 'bold', color: '#0f766e', marginBottom: 15, textAlign: 'center' },
+  input: { backgroundColor: '#fff', paddingHorizontal: 15, paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: '#cbd5e1', marginBottom: 10, fontSize: 15 },
+  button: { backgroundColor: '#0f766e', padding: 14, borderRadius: 10, alignItems: 'center', marginBottom: 20 },
+  buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  card: { backgroundColor: '#fff', padding: 15, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 12, elevation: 2 },
+  cardTitle: { fontSize: 16, fontWeight: '700', color: '#1e293b' },
+  cardAuthor: { fontSize: 13, color: '#64748b', marginTop: 3 },
+  actionContainer: { flexDirection: 'row', gap: 8 },
+  editBtn: { backgroundColor: '#0284c7', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  deleteBtn: { backgroundColor: '#ef4444', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  actionText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
 });
